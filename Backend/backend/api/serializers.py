@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import GlobalsExtrainfo, GlobalsDesignation, GlobalsHoldsdesignation, AuthUser, GlobalsModuleaccess, Student, Batch, Curriculum, Discipline, Programme, Staff, GlobalsFaculty, GlobalsDepartmentinfo
+from .models import GlobalsExtrainfo, GlobalsDesignation, GlobalsHoldsdesignation, AuthUser, GlobalsModuleaccess, Student, Batch, Curriculum, Discipline, Programme, Staff, GlobalsFaculty, GlobalsDepartmentinfo, AuditLog
 
 class GlobalExtraInfoSerializer(serializers.ModelSerializer):
     class Meta:
@@ -140,6 +140,12 @@ class ViewFacultyWithFiltersSerializer(serializers.ModelSerializer):
     
     def get_designations(self, obj):
         return [
-            d.designation.name 
+            d.designation.name
             for d in obj.id.user.holds_designations.all()
         ]
+
+
+class AuditLogSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = AuditLog
+        fields = '__all__'

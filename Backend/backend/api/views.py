@@ -9,10 +9,10 @@ from rest_framework.response import Response
 from rest_framework.decorators import api_view
 from rest_framework import status
 from rest_framework.views import APIView
-from .models import GlobalsDesignation, GlobalsHoldsdesignation, GlobalsModuleaccess, AuthUser, Batch, Student, GlobalsDepartmentinfo, Programme, GlobalsFaculty, Staff
-from .serializers import GlobalExtraInfoSerializer, GlobalsDesignationSerializer, GlobalsModuleaccessSerializer, AuthUserSerializer, GlobalsHoldsDesignationSerializer, StudentSerializer, GlobalsFacultySerializer, GlobalsDepartmentinfoSerializer, BatchSerializer, ProgrammeSerializer, StaffSerializer, ViewStudentsWithFiltersSerializer, ViewStaffWithFiltersSerializer, ViewFacultyWithFiltersSerializer
+from .models import GlobalsDesignation, GlobalsHoldsdesignation, GlobalsModuleaccess, AuthUser, Batch, Student, GlobalsDepartmentinfo, Programme, GlobalsFaculty, Staff, AuditLog
+from .serializers import GlobalExtraInfoSerializer, GlobalsDesignationSerializer, GlobalsModuleaccessSerializer, AuthUserSerializer, GlobalsHoldsDesignationSerializer, StudentSerializer, GlobalsFacultySerializer, GlobalsDepartmentinfoSerializer, BatchSerializer, ProgrammeSerializer, StaffSerializer, ViewStudentsWithFiltersSerializer, ViewStaffWithFiltersSerializer, ViewFacultyWithFiltersSerializer, AuditLogSerializer
 from io import StringIO
-from .helpers import create_password, send_email, mail_to_user, configure_password_mail, add_user_extra_info, add_user_designation_info, add_student_info
+from .helpers import create_password, send_email, mail_to_user, configure_password_mail, add_user_extra_info, add_user_designation_info, add_student_info, log_audit
 from django.contrib.auth.hashers import make_password
 from backend.settings import EMAIL_TEST_ARRAY
 from django.conf import settings
@@ -104,6 +104,18 @@ def update_user_roles(request):
                 working=user
             )
 
+    actor = request.data.get('performed_by', 'unknown')
+    added = list(processed_roles_to_add - existing_role_names)
+    removed = list(roles_to_remove)
+    log_audit(
+        actor=actor,
+        action='ROLE_CHANGE',
+        resource_type='role',
+        target_user=username,
+        details={'added': added, 'removed': removed},
+        request=request,
+    )
+
     return Response({"message": "User roles updated successfully."}, status=status.HTTP_200_OK)
         
 @api_view(['GET'])
@@ -154,6 +166,14 @@ def add_designation(request):
         module_serializer = GlobalsModuleaccessSerializer(data=data)
         if module_serializer.is_valid():
             module_serializer.save()
+        actor = request.data.get('performed_by', 'unknown')
+        log_audit(
+            actor=actor,
+            action='CREATE',
+            resource_type='role',
+            details={'role_name': role.name, 'role_type': role.type},
+            request=request,
+        )
         return Response({'role': serializer.data, 'modules': module_serializer.data}, status.HTTP_201_CREATED)
     else :
         return Response(serializer.errors, status.HTTP_400_BAD_REQUEST)
@@ -198,6 +218,14 @@ def reset_password(request):
         except:
             print(e)
         finally:
+            actor = request.data.get('performed_by', 'unknown')
+            log_audit(
+                actor=actor,
+                action='RESET_PASSWORD',
+                resource_type='user',
+                target_user=user_name,
+                request=request,
+            )
             return Response({"password": new_password,"message": "Password reset successfully."}, status=status.HTTP_200_OK)
     except AuthUser.DoesNotExist:
         return Response({"error": "User not found"}, status=status.HTTP_404_NOT_FOUND)
@@ -232,11 +260,19 @@ def modify_moduleaccess(request):
         return Response({"error": f"Designation with name '{role_name}' not found."}, status=status.HTTP_404_NOT_FOUND)
 
     serializer = GlobalsModuleaccessSerializer(designation, data=request.data, partial=True)
-    
+
     if serializer.is_valid():
         serializer.save()
+        actor = request.data.get('performed_by', 'unknown')
+        log_audit(
+            actor=actor,
+            action='MODULE_ACCESS_CHANGE',
+            resource_type='role',
+            details={'designation': role_name},
+            request=request,
+        )
         return Response(serializer.data, status=status.HTTP_200_OK)
-    
+
     return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 @api_view(['POST'])
@@ -337,6 +373,16 @@ def add_individual_student(request):
             "data": student_data_serializer.errors
         }, status=status.HTTP_400_BAD_REQUEST)
     
+    actor = request.data.get('performed_by', 'unknown')
+    log_audit(
+        actor=actor,
+        action='CREATE',
+        resource_type='student',
+        target_user=data['username'].upper(),
+        details={'programme': data.get('programme'), 'batch': data.get('batch')},
+        request=request,
+    )
+
     response_data = {
         "message": f"1 user created successfully.",
         "created_users": [auth_serializer.data],
@@ -430,6 +476,16 @@ def add_individual_staff(request):
             "message": "Error in adding user to globals staff table",
             "data": staff_serializer.errors
         }, status=status.HTTP_400_BAD_REQUEST)
+
+    actor = request.data.get('performed_by', 'unknown')
+    log_audit(
+        actor=actor,
+        action='CREATE',
+        resource_type='staff',
+        target_user=data['username'].lower(),
+        details={'designation': data.get('designation')},
+        request=request,
+    )
 
     return Response({
         "message": "Staff added successfully",
@@ -525,6 +581,16 @@ def add_individual_faculty(request):
             "data": faculty_serializer.errors
         }, status=status.HTTP_400_BAD_REQUEST)
 
+    actor = request.data.get('performed_by', 'unknown')
+    log_audit(
+        actor=actor,
+        action='CREATE',
+        resource_type='faculty',
+        target_user=data['username'].lower(),
+        details={'designation': data.get('designation')},
+        request=request,
+    )
+
     return Response({
         "message": "Faculty added successfully",
         "auth_user_data": auth_user_data,
@@ -602,7 +668,16 @@ def bulk_import_users(request):
 
     if(len(created_users) > 0):
         mail_to_user(created_users)
-        
+
+    actor = request.data.get('performed_by', 'unknown')
+    log_audit(
+        actor=actor,
+        action='BULK_IMPORT',
+        resource_type='student',
+        details={'created': len(created_users), 'skipped': len(failed_users)},
+        request=request,
+    )
+
     response_data = {
         "message": f"{len(created_users)} users created successfully.",
         "created_users": created_users,
@@ -718,3 +793,20 @@ class UserListView(APIView):
             return Response({"error": "Invalid or missing user type."}, status=status.HTTP_400_BAD_REQUEST)
 
         return Response(serializer.data)
+
+
+@api_view(['GET'])
+def get_audit_logs(request):
+    logs = AuditLog.objects.all()
+    actor = request.query_params.get('actor')
+    action = request.query_params.get('action')
+    resource_type = request.query_params.get('resource_type')
+    if actor:
+        logs = logs.filter(actor__icontains=actor)
+    if action:
+        logs = logs.filter(action=action)
+    if resource_type:
+        logs = logs.filter(resource_type__icontains=resource_type)
+    logs = logs[:200]
+    serializer = AuditLogSerializer(logs, many=True)
+    return Response(serializer.data)

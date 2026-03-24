@@ -56,15 +56,20 @@ export const AuthProvider = ({children}) =>{
       };
     }, []);
 
-    const login = () => {
+    const login = (email) => {
         setIsAuthenticated(true);
         localStorage.setItem("isAuthenticated", "true");
         localStorage.setItem("sessionStart", Date.now().toString());
+        if (email) {
+          const username = email.split('@')[0];
+          localStorage.setItem("adminUsername", username);
+        }
       };
 
       const logout = () => {
         setIsAuthenticated(false);
         localStorage.clear();
+        localStorage.removeItem("adminUsername");
       };
 
     return (
