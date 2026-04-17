@@ -21,7 +21,7 @@ const LoginPage = () => {
     try {
       const user = await handleLogin(values.email, values.password);
       console.log("Logged in user:", user);
-      login();
+      login(user.email);
       navigate("/UserDirectory", { replace: true });
     } catch (error) {
       console.error("Login error:", error.message);

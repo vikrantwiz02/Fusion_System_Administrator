@@ -104,6 +104,7 @@ const ManageRoleAccessPage = () => {
       await axios.put(API_URL + `/api/modify-roleaccess/`, {
         designation: roleName,
         ...moduleAccess,
+        performed_by: localStorage.getItem('adminUsername') || 'unknown',
       });
 
       notifications.show({

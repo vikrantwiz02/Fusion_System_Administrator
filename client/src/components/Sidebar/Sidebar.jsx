@@ -1,7 +1,23 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useMediaQuery } from "@mantine/hooks";
-import { FaUserAlt, FaClone, FaBook, FaSignOutAlt, FaUserGraduate, FaChalkboardTeacher, FaUsersCog, FaKey, FaUserShield, FaTasks, FaEdit, FaArchive as FaArchiveIcon } from "react-icons/fa";
+import {
+  FaUserAlt,
+  FaClone,
+  FaBook,
+  FaSignOutAlt,
+  FaUserGraduate,
+  FaChalkboardTeacher,
+  FaUsersCog,
+  FaKey,
+  FaUserShield,
+  FaTasks,
+  FaEdit,
+  FaArchive as FaArchiveIcon,
+  FaHdd,
+  FaClock,
+} from "react-icons/fa";
+import { FaUserAlt, FaClone, FaBook, FaSignOutAlt, FaUserGraduate, FaChalkboardTeacher, FaUsersCog, FaKey, FaUserShield, FaTasks, FaEdit, FaArchive as FaArchiveIcon, FaClipboardList } from "react-icons/fa";
 import { Tooltip, Flex, Modal, Button } from "@mantine/core";
 import { useAuth } from '../../context/AuthContext';
 
@@ -67,6 +83,13 @@ const Sidebar = () => {
         { label: "Archive Students", path: "/archive/students", icon: <FaArchiveIcon size={18} /> },
         { label: "Archive Faculty", path: "/archive/faculty", icon: <FaArchiveIcon size={18} /> },
       ],
+    },
+    {
+      label: "Audit Log",
+      icon: <FaClipboardList size={24} />,
+      height: "10%",
+      isPrimary: true,
+      action: () => navigate("/AuditLog"),
     },
   ];
 

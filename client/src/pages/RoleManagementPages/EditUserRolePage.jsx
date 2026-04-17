@@ -62,6 +62,7 @@ const EditUserRolePage = () => {
       await axios.put(API_URL + `/api/update-user-roles/`, {
         username: username,
         roles: updatedRoles,
+        performed_by: localStorage.getItem('adminUsername') || 'unknown',
       });
 
       notifications.show({

@@ -183,6 +183,22 @@ def add_user_designation_info(user_id, designation='student'):
         return serializer
     return None
 
+def log_audit(actor, action, resource_type, target_user=None, details=None, request=None):
+    from .models import AuditLog
+    ip = None
+    if request:
+        x_forwarded_for = request.META.get('HTTP_X_FORWARDED_FOR')
+        ip = x_forwarded_for.split(',')[0] if x_forwarded_for else request.META.get('REMOTE_ADDR')
+    AuditLog.objects.create(
+        actor=actor,
+        action=action,
+        resource_type=resource_type,
+        target_user=target_user,
+        details=details or {},
+        ip_address=ip,
+    )
+
+
 def add_student_info(row, extrainfo):
     batch = int(row[7]) if row[7] else datetime.now().year
     batch_id = Batch.objects.all().filter(name = row[8], discipline__acronym = extrainfo.department.name, year = batch)
