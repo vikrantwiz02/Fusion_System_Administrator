@@ -388,6 +388,8 @@ def _sync_orphaned_backups():
 
     The database is read from the filename ("<db>__<uuid>.dump"). Legacy files
     without a db prefix fall back to the main ERP database name.
+
+    Security: Only .dump files are expected. Unexpected files are logged as warnings.
     """
     existing_ids = set(
         str(pk) for pk in BackupRecord.objects.values_list("id", flat=True)
@@ -396,31 +398,42 @@ def _sync_orphaned_backups():
     # Recurse: dumps now live in per-database sub-folders (older ones may still sit
     # flat in the root), so scan the whole tree.
     for dump_file in BACKUP_DIR.rglob(f"*{_DUMP_SUFFIX}"):
-        db_name, file_uuid = _parse_dump_filename(dump_file.stem)
-        if file_uuid is None:  # not a recognisable dump file
+        try:
+            # Reject broken symlinks — should not exist in backup directory
+            if not dump_file.exists():
+                logger.warning(f"Broken symlink or inaccessible file in backup dir: {dump_file}")
+                continue
+
+            db_name, file_uuid = _parse_dump_filename(dump_file.stem)
+            if file_uuid is None:  # not a recognisable dump file
+                logger.warning(f"File in backup dir with invalid dump name format: {dump_file}")
+                continue
+            if file_uuid in existing_ids:
+                continue
+
+            # legacy files carry no db prefix; assume the main ERP database
+            if db_name is None:
+                db_name = _db_name_for_alias(MAIN_DB_ALIAS)
+
+            parsed = _uuid.UUID(file_uuid)
+            file_size = dump_file.stat().st_size
+            file_mtime = timezone.datetime.fromtimestamp(
+                dump_file.stat().st_mtime, tz=timezone.utc
+            )
+
+            BackupRecord.objects.create(
+                id=parsed,
+                db_name=db_name,
+                status="success",
+                size_bytes=file_size,
+                file_path=str(dump_file),
+            )
+            # auto_now_add ignores values passed to create(), so update directly
+            BackupRecord.objects.filter(id=parsed).update(created_at=file_mtime)
+        except (OSError, PermissionError) as e:
+            # Permission errors should alert admins — this may indicate a security issue
+            logger.error(f"Permission denied accessing backup file (check directory permissions): {dump_file} — {e}")
             continue
-        if file_uuid in existing_ids:
-            continue
-
-        # legacy files carry no db prefix; assume the main ERP database
-        if db_name is None:
-            db_name = _db_name_for_alias(MAIN_DB_ALIAS)
-
-        parsed = _uuid.UUID(file_uuid)
-        file_size = dump_file.stat().st_size
-        file_mtime = timezone.datetime.fromtimestamp(
-            dump_file.stat().st_mtime, tz=timezone.utc
-        )
-
-        BackupRecord.objects.create(
-            id=parsed,
-            db_name=db_name,
-            status="success",
-            size_bytes=file_size,
-            file_path=str(dump_file),
-        )
-        # auto_now_add ignores values passed to create(), so update directly
-        BackupRecord.objects.filter(id=parsed).update(created_at=file_mtime)
 
 
 @api_view(["GET"])
