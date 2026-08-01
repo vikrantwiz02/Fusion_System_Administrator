@@ -519,7 +519,7 @@ def batch_students(batch_id, specialization=None):
         raise ServiceError({"success": False, "message": f"Batch with ID {batch_id} not found"}, status=404)
 
     programme_type = "ug" if batch.name.startswith("B.") else "pg" if batch.name.startswith("M.") else "phd"
-    students = StudentBatchUpload.objects.filter(year=batch.year, programme_type=programme_type)
+    students = StudentBatchUpload.objects.filter(year=batch.year, programme_type=programme_type).defer("section")
 
     discipline = batch.discipline
     if programme_type == "pg" and specialization:
