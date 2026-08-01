@@ -303,58 +303,71 @@ def is_duplicate(student, fields):
 
 
 def serialize_student(student):
-    return {
-        "id": student.id,
-        "name": student.name,
-        "roll_number": student.roll_number,
-        "institute_email": student.institute_email,
-        "jee_app_no": student.jee_app_no,
-        "father_name": student.father_name,
-        "mother_name": student.mother_name,
-        "gender": student.gender,
-        "category": student.category,
-        "pwd": student.pwd,
-        "minority": student.minority or "",
-        "date_of_birth": student.date_of_birth.isoformat() if student.date_of_birth else "",
-        "phone_number": student.phone_number or "",
-        "address": student.address or "",
-        "state": student.state or "",
-        "branch": student.branch,
-        "section": student.section or "",
-        "specialization": student.specialization or "",
-        "ai_rank": student.ai_rank,
-        "category_rank": student.category_rank,
-        "father_occupation": student.father_occupation or "",
-        "father_mobile": student.father_mobile or "",
-        "mother_occupation": student.mother_occupation or "",
-        "mother_mobile": student.mother_mobile or "",
-        "aadhar_number": student.aadhar_number or "",
-        "allotted_category": student.allotted_category or "",
-        "allotted_gender": student.allotted_gender or "",
-        "parent_email": student.parent_email or "",
-        "personal_email": student.personal_email or "",
-        "country": student.country or "",
-        "nationality": student.nationality or "",
-        "blood_group": student.blood_group or "",
-        "blood_group_remarks": student.blood_group_remarks or "",
-        "pwd_category": student.pwd_category or "",
-        "pwd_category_remarks": student.pwd_category_remarks or "",
-        "admission_mode": student.admission_mode or "",
-        "admission_mode_remarks": student.admission_mode_remarks or "",
-        "income_group": student.income_group or "",
-        "income": str(student.income) if student.income is not None else "",
-        "tenth_marks": student.tenth_marks,
-        "twelfth_marks": student.twelfth_marks,
-        "year": student.year,
-        "academic_year": student.academic_year,
-        "programme_type": student.programme_type,
-        "allocation_status": student.allocation_status,
-        "reported_status": student.reported_status,
-        "status_display": dict(StudentBatchUpload.REPORTED_STATUS_CHOICES).get(
-            student.reported_status, student.reported_status
-        ),
-        "source": student.source,
-    }
+    def safe_get(attr, default=""):
+        try:
+            val = getattr(student, attr, None)
+            if attr.endswith("_date") and val and hasattr(val, "isoformat"):
+                return val.isoformat()
+            return val or default
+        except Exception:
+            return default
+
+    try:
+        return {
+            "id": student.id,
+            "name": safe_get("name", ""),
+            "roll_number": safe_get("roll_number"),
+            "institute_email": safe_get("institute_email"),
+            "jee_app_no": safe_get("jee_app_no"),
+            "father_name": safe_get("father_name", ""),
+            "mother_name": safe_get("mother_name", ""),
+            "gender": safe_get("gender", ""),
+            "category": safe_get("category", ""),
+            "pwd": safe_get("pwd", "NO"),
+            "minority": safe_get("minority"),
+            "date_of_birth": safe_get("date_of_birth"),
+            "phone_number": safe_get("phone_number"),
+            "address": safe_get("address", ""),
+            "state": safe_get("state"),
+            "branch": safe_get("branch", ""),
+            "section": safe_get("section"),
+            "specialization": safe_get("specialization"),
+            "ai_rank": safe_get("ai_rank"),
+            "category_rank": safe_get("category_rank"),
+            "father_occupation": safe_get("father_occupation"),
+            "father_mobile": safe_get("father_mobile"),
+            "mother_occupation": safe_get("mother_occupation"),
+            "mother_mobile": safe_get("mother_mobile"),
+            "aadhar_number": safe_get("aadhar_number"),
+            "allotted_category": safe_get("allotted_category"),
+            "allotted_gender": safe_get("allotted_gender"),
+            "parent_email": safe_get("parent_email"),
+            "personal_email": safe_get("personal_email"),
+            "country": safe_get("country", ""),
+            "nationality": safe_get("nationality", ""),
+            "blood_group": safe_get("blood_group"),
+            "blood_group_remarks": safe_get("blood_group_remarks"),
+            "pwd_category": safe_get("pwd_category"),
+            "pwd_category_remarks": safe_get("pwd_category_remarks"),
+            "admission_mode": safe_get("admission_mode"),
+            "admission_mode_remarks": safe_get("admission_mode_remarks"),
+            "income_group": safe_get("income_group"),
+            "income": str(safe_get("income")) if safe_get("income") else "",
+            "tenth_marks": safe_get("tenth_marks"),
+            "twelfth_marks": safe_get("twelfth_marks"),
+            "year": safe_get("year"),
+            "academic_year": safe_get("academic_year", ""),
+            "programme_type": safe_get("programme_type", ""),
+            "allocation_status": safe_get("allocation_status", ""),
+            "reported_status": safe_get("reported_status", "NOT_REPORTED"),
+            "status_display": dict(StudentBatchUpload.REPORTED_STATUS_CHOICES).get(
+                safe_get("reported_status", "NOT_REPORTED"), "Unknown"
+            ),
+            "source": safe_get("source", ""),
+        }
+    except Exception as e:
+        logger.error(f"Failed to serialize StudentBatchUpload {getattr(student, 'id', '?')}: {e}")
+        raise
 
 
 STUDENT_FIELD_MAP = {
