@@ -82,6 +82,9 @@ def logout_view(request):
 urlpatterns = [
     path("admin/", admin.site.urls),
     path("api/", include("api.urls")),
+    # Identity for ERP users (students/faculty/staff). Distinct from
+    # the operator console login below, which uses its own pool.
+    path("api/iam/", include("iam.urls")),
     path("api/login/", LoginView.as_view(), name="api-login"),
     path("api/logout/", logout_view, name="api-logout"),
 ]
