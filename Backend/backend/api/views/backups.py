@@ -759,7 +759,7 @@ def save_schedule(request):
     Create or update a BackupSchedule for a given db_name.
     If one already exists for that db_name, it is updated.
     """
-    from . import scheduler as sched_module
+    from .. import scheduler as sched_module
 
     db_name = request.data.get("db_name")
     if not db_name:
@@ -828,7 +828,7 @@ def save_schedule(request):
 @permission_classes([IsAuthenticated])
 def toggle_schedule(request, schedule_id):
     """Enable or disable a schedule without deleting it."""
-    from . import scheduler as sched_module
+    from .. import scheduler as sched_module
 
     try:
         sched = BackupSchedule.objects.get(id=schedule_id)
@@ -853,7 +853,7 @@ def toggle_schedule(request, schedule_id):
 @permission_classes([IsAdminUser])  # destructive: removes a schedule + its job
 def delete_schedule(request, schedule_id):
     """Delete a schedule and remove the APScheduler job."""
-    from . import scheduler as sched_module
+    from .. import scheduler as sched_module
 
     try:
         sched = BackupSchedule.objects.get(id=schedule_id)
@@ -894,7 +894,7 @@ def preview_next_runs(request):
     fake.day_of_month = int(day_of_month) if day_of_month is not None else None
     fake.cron_expression = cron_expression
 
-    from . import scheduler as sched_module
+    from .. import scheduler as sched_module
 
     try:
         trigger = sched_module._build_trigger(fake)

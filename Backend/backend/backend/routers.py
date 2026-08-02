@@ -18,6 +18,10 @@ class SystemDBRouter:
     # Whole apps that live in system_db (their tables FK each other).
     route_app_labels = {
         'django_apscheduler',
+        # The IAM's own tables (sessions for ERP users, role->permission map,
+        # login attempts). They must NOT land in the ERP database — this
+        # service only ever reads that one.
+        'iam',
         'auth',
         'admin',
         'sessions',

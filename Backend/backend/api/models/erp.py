@@ -238,3 +238,121 @@ class GlobalsFaculty(models.Model):
     class Meta:
         managed = False
         db_table = "globals_faculty"
+
+
+# ---------------------------------------------------------------------------
+# Grades and result declarations.
+#
+# Read only by iam/erp_source.py, to project each student's declared CPI into
+# system_db. Placement eligibility needs a CGPA (PC-BR-004) and
+# academic_information_student.cpi is permanently 0.0 — its only writers set
+# zero at creation — so the number has to be computed from the grade rows the
+# way the ERP itself computes it.
+# ---------------------------------------------------------------------------
+class Course(models.Model):
+    """programme_curriculum.Course. Only the two fields the grade math uses."""
+
+    code = models.CharField(max_length=20)
+    name = models.CharField(max_length=100)
+    credit = models.PositiveIntegerField(default=0, null=True)
+
+    class Meta:
+        managed = False
+        db_table = "programme_curriculum_course"
+
+    def __str__(self):
+        return f"{self.code} ({self.credit})"
+
+
+class StudentGrade(models.Model):
+    """online_cms.Student_grades — one row per course per student per attempt.
+
+    `roll_no` is a TEXT column holding globals_extrainfo.id (the roll number),
+    NOT auth_user.id. That mismatch is the reason this module exists: joining
+    grades to a platform user_id takes two hops.
+    """
+
+    course_id = models.ForeignKey(Course, on_delete=models.DO_NOTHING,
+                                  db_column="course_id_id")
+    semester = models.IntegerField(default=1)
+    year = models.IntegerField(default=2016)
+    roll_no = models.TextField()
+    grade = models.TextField()
+    batch = models.IntegerField(default=2021)
+    academic_year = models.CharField(max_length=9, null=True)
+    semester_type = models.CharField(max_length=20, null=True)
+
+    class Meta:
+        managed = False
+        db_table = "online_cms_student_grades"
+
+
+class CourseRegistration(models.Model):
+    course_id = models.ForeignKey(Course, on_delete=models.DO_NOTHING,
+                                  db_column="course_id_id")
+    student_id = models.ForeignKey(Student, on_delete=models.DO_NOTHING,
+                                   db_column="student_id_id")
+    semester_type = models.CharField(max_length=20, null=True)
+    working_year = models.IntegerField(null=True)
+
+    class Meta:
+        managed = False
+        db_table = "course_registration"
+
+
+class CourseReplacement(models.Model):
+    """A swayam/replacement course supersedes the elective it replaced.
+
+    Both sides point at course_registration, so resolving it to course codes
+    needs the join above.
+    """
+
+    old_course_registration = models.ForeignKey(
+        CourseRegistration, on_delete=models.DO_NOTHING,
+        db_column="old_course_registration_id", related_name="+")
+    new_course_registration = models.ForeignKey(
+        CourseRegistration, on_delete=models.DO_NOTHING,
+        db_column="new_course_registration_id", related_name="+")
+
+    class Meta:
+        managed = False
+        db_table = "course_replacement"
+
+
+class ResultAnnouncement(models.Model):
+    """When a batch's semester result was declared.
+
+    `announced` is the gate. Note there is no `declared_at` column — created_at
+    is when the admin created the not-yet-announced placeholder, so it is a
+    lower bound on declaration time, not the declaration time itself.
+    """
+
+    batch = models.ForeignKey(Batch, on_delete=models.DO_NOTHING,
+                              db_column="batch_id")
+    semester = models.PositiveIntegerField()
+    semester_type = models.CharField(max_length=20, null=True)
+    announced = models.BooleanField(default=False)
+    per_student_selection = models.BooleanField(default=False)
+    created_at = models.DateTimeField()
+
+    class Meta:
+        managed = False
+        db_table = "examination_resultannouncement"
+
+
+class PublishedResultStudent(models.Model):
+    """The per-student allow-list for an announcement.
+
+    When `per_student_selection` is true, only students listed here may see
+    their result — and therefore only they have a declared CPI.
+    """
+
+    announcement = models.ForeignKey(ResultAnnouncement, on_delete=models.DO_NOTHING,
+                                     db_column="announcement_id",
+                                     related_name="published_students")
+    roll_no = models.CharField(max_length=20)
+    created_at = models.DateTimeField()
+
+    class Meta:
+        managed = False
+        db_table = "examination_publishedresultstudent"
