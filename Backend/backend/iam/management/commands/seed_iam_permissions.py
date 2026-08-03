@@ -22,6 +22,8 @@ STUDENT = [
     "placement_cell.application.create",
     "placement_cell.application.delete",
     "placement_cell.offer.respond",
+    # Rule 1: without this a student cannot enter the season at all.
+    "placement_cell.registration.self",
 ]
 
 COORDINATOR = [
@@ -39,6 +41,10 @@ OFFICER = COORDINATOR + [
     "placement_cell.offer.revoke",
     "placement_cell.company.manage",
     "placement_cell.announcement.publish",
+    # Rules 18-24: the authority decisions, not a coordinator's review.
+    "placement_cell.registration.manage",
+    "placement_cell.registration.debar",
+    "placement_cell.record.manage",
 ]
 
 # The chairman oversees rather than operates: reports and announcements, no
