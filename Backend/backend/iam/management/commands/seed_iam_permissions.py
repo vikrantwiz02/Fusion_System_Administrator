@@ -1,84 +1,100 @@
-"""Map existing ERP designations onto platform permission codes.
+"""Seed designation -> permission mappings from the platform's manifest.
 
-The ERP has designations and module access but no permission concept, so this
-is the bridge. Idempotent — safe to re-run.
+The platform owns the mapping: it declares the permissions its views guard on
+and which designations may hold them, and its CI refuses a code no designation
+can hold. This command only stores the answer.
 
-Only placement is covered today, because placement is the only module built.
-Add rows here as modules land.
+    manage.py seed_iam_permissions --manifest /srv/fusion/platform/current/registry/permissions.json
+
+Idempotent. Rows for a module in the manifest that the manifest no longer lists
+are removed, so revoking a grant upstream actually revokes it here; modules
+absent from the manifest are left untouched.
 """
-from django.core.management.base import BaseCommand
+import json
+from pathlib import Path
+
+from django.core.management.base import BaseCommand, CommandError
 from django.db import transaction
 
 from iam.models import RolePermission
 
-# These codes MUST match modules/placement/registry.py in Fusion-Integrated.
-# A grant for a code the platform does not check is dead weight; a code the
-# platform checks but nobody can be granted locks the endpoint forever. Both
-# are silent, so the list is kept deliberately short and reviewed together with
-# the module's PERMISSIONS.
-STUDENT = [
-    "placement_cell.job_posting.view",
-    "placement_cell.application.view_self",
-    "placement_cell.application.create",
-    "placement_cell.application.delete",
-    "placement_cell.offer.respond",
-    # Rule 1: without this a student cannot enter the season at all.
-    "placement_cell.registration.self",
-]
+SUPPORTED_VERSION = 1
 
-COORDINATOR = [
-    "placement_cell.job_posting.view",
-    "placement_cell.application.view",
-    "placement_cell.application.review",
-    "placement_cell.report.view",
-    "placement_cell.academic_directory.view",
-]
-
-OFFICER = COORDINATOR + [
-    "placement_cell.job_posting.manage",
-    "placement_cell.interview.schedule",
-    "placement_cell.offer.issue",
-    "placement_cell.offer.revoke",
-    "placement_cell.company.manage",
-    "placement_cell.announcement.publish",
-    # Rules 18-24: the authority decisions, not a coordinator's review.
-    "placement_cell.registration.manage",
-    "placement_cell.registration.debar",
-    "placement_cell.record.manage",
-]
-
-# The chairman oversees rather than operates: reports and announcements, no
-# shortlisting and no offers (PC-UC-012, PC-UC-013).
-CHAIRMAN = [
-    "placement_cell.job_posting.view",
-    "placement_cell.application.view",
-    "placement_cell.report.view",
-    "placement_cell.academic_directory.view",
-    "placement_cell.announcement.publish",
-]
-
-# Keyed by the designation name as it exists in globals_designation.
-GRANTS = {
-    "student": STUDENT,
-    "placement_coordinator": COORDINATOR,
-    "placement_officer": OFFICER,
-    "placement_chairman": CHAIRMAN,
-    "Dean Academic": CHAIRMAN,
-    "acadadmin": COORDINATOR,
-}
+#: Where the platform is deployed alongside this console.
+DEFAULT_MANIFEST = Path("/srv/fusion/platform/current/registry/permissions.json")
 
 
 class Command(BaseCommand):
-    help = "Seed designation -> permission mappings for the IAM"
+    help = "Seed designation -> permission mappings from the platform manifest"
+
+    def add_arguments(self, parser):
+        parser.add_argument(
+            "--manifest", type=Path, default=DEFAULT_MANIFEST,
+            help=f"Path to registry/permissions.json (default {DEFAULT_MANIFEST})")
+        parser.add_argument(
+            "--dry-run", action="store_true",
+            help="Report what would change without writing.")
+
+    def handle(self, *args, **opts):
+        dry_run = opts["dry_run"]
+        manifest = self._load(opts["manifest"])
+        added, removed = self._apply(manifest, dry_run=dry_run)
+
+        for line in removed:
+            self.stdout.write(self.style.WARNING(
+                f"  {'would revoke' if dry_run else 'revoked'} {line}"))
+        self.stdout.write(self.style.SUCCESS(
+            f"{len(added)} to add, {len(removed)} to revoke" if dry_run
+            else f"{len(added)} added, {len(removed)} revoked; "
+                 f"{RolePermission.objects.count()} total"))
+
+    def _load(self, path: Path) -> dict:
+        try:
+            manifest = json.loads(path.read_text())
+        except OSError as exc:
+            raise CommandError(
+                f"Cannot read {path}: {exc}. The platform writes it with "
+                f"'make permissions'; pass --manifest if it lives elsewhere."
+            ) from exc
+        except json.JSONDecodeError as exc:
+            raise CommandError(f"{path} is not valid JSON: {exc}") from exc
+
+        version = manifest.get("version")
+        if version != SUPPORTED_VERSION:
+            raise CommandError(
+                f"{path} declares version {version!r}; this command "
+                f"understands {SUPPORTED_VERSION}. Upgrade one side or the "
+                f"other rather than guessing at the shape.")
+        if not manifest.get("modules"):
+            raise CommandError(f"{path} lists no modules — refusing to treat "
+                               f"that as 'revoke everything'.")
+        return manifest
 
     @transaction.atomic
-    def handle(self, *args, **options):
-        created = 0
-        for designation, perms in GRANTS.items():
-            for perm in perms:
-                _, made = RolePermission.objects.get_or_create(
-                    designation=designation, permission=perm)
-                created += int(made)
-            self.stdout.write(f"  {designation}: {len(perms)} permission(s)")
-        self.stdout.write(self.style.SUCCESS(
-            f"{created} new mapping(s); {RolePermission.objects.count()} total"))
+    def _apply(self, manifest: dict, *, dry_run: bool):
+        added, removed = [], []
+        for module_code, spec in sorted(manifest["modules"].items()):
+            wanted = {
+                (designation, code)
+                for designation, codes in spec.get("grants", {}).items()
+                for code in codes
+            }
+            # Scoped to this module's prefix so another module's rows survive.
+            existing = RolePermission.objects.filter(
+                permission__startswith=f"{module_code}.")
+            have = {(r.designation, r.permission) for r in existing}
+
+            for designation, code in sorted(wanted - have):
+                added.append(f"{designation}: {code}")
+                if not dry_run:
+                    RolePermission.objects.get_or_create(
+                        designation=designation, permission=code)
+
+            for designation, code in sorted(have - wanted):
+                removed.append(f"{designation}: {code}")
+                if not dry_run:
+                    existing.filter(designation=designation,
+                                    permission=code).delete()
+
+            self.stdout.write(f"  {module_code}: {len(wanted)} mapping(s)")
+        return added, removed

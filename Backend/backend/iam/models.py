@@ -161,7 +161,8 @@ class RolePermission(models.Model):
     The ERP has designations and a module-access table, but no concept of a
     permission. Rather than invent a parallel role system, this maps the
     designations that already exist onto the permission codes the platform
-    checks. Seeded by `manage.py seed_iam_permissions`.
+    checks. The platform owns the mapping; `manage.py seed_iam_permissions`
+    stores it from the manifest that platform's CI validates.
     """
 
     designation = models.CharField(max_length=155, db_index=True)
