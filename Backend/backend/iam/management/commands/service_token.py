@@ -19,6 +19,8 @@ class Command(BaseCommand):
         g = parser.add_mutually_exclusive_group(required=True)
         g.add_argument("--issue", metavar="NAME",
                        help="Create a token and print it once.")
+        g.add_argument("--rotate", metavar="NAME",
+                       help="Replace an existing token's value, keeping its name.")
         g.add_argument("--revoke", metavar="NAME",
                        help="Deactivate a token. Existing callers start failing.")
         g.add_argument("--list", action="store_true",
@@ -29,21 +31,42 @@ class Command(BaseCommand):
             return self._list()
         if opts["revoke"]:
             return self._revoke(opts["revoke"])
+        if opts["rotate"]:
+            return self._rotate(opts["rotate"])
         return self._issue(opts["issue"])
 
-    def _issue(self, name):
-        if IamServiceToken.objects.filter(name=name).exists():
-            raise CommandError(
-                f"A token named {name!r} already exists. Revoke it first, or "
-                f"pick another name — names are how you tell them apart later."
-            )
-        _, raw = IamServiceToken.issue(name)
-        self.stdout.write(self.style.SUCCESS(f"\nIssued service token {name!r}.\n"))
+    def _print_value(self, verb, name, raw):
+        self.stdout.write(self.style.SUCCESS(f"\n{verb} service token {name!r}.\n"))
         self.stdout.write("  Put this in the calling service's environment:\n\n")
         self.stdout.write(f"      IAM_SERVICE_TOKEN={raw}\n\n")
         self.stdout.write(self.style.WARNING(
             "  Shown once. Only its digest is stored — there is no way to "
             "print it again.\n"))
+
+    def _issue(self, name):
+        existing = IamServiceToken.objects.filter(name=name).first()
+        if existing is not None:
+            # Revoking does not free the name: it is unique, and the row stays
+            # so "who held this?" survives. Rotation is the way back.
+            state = "active" if existing.is_active else "revoked"
+            raise CommandError(
+                f"A token named {name!r} already exists ({state}). Names are "
+                f"unique, so replace its value with --rotate {name}, or issue "
+                f"under a different name."
+            )
+        _, raw = IamServiceToken.issue(name)
+        self._print_value("Issued", name, raw)
+
+    def _rotate(self, name):
+        token = IamServiceToken.objects.filter(name=name).first()
+        if token is None:
+            raise CommandError(
+                f"No token named {name!r}. Create it with --issue {name}.")
+        was_revoked = not token.is_active
+        self._print_value("Rotated", name, token.rotate())
+        if was_revoked:
+            self.stdout.write("  It was revoked; rotating has made it active "
+                              "again.\n")
 
     def _revoke(self, name):
         n = IamServiceToken.objects.filter(name=name, is_active=True).update(

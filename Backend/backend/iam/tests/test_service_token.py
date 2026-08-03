@@ -40,6 +40,24 @@ class ServiceTokenModelTests(TestCase):
         row.save()
         self.assertIsNone(IamServiceToken.resolve(raw))
 
+    def test_rotate_replaces_the_value_and_keeps_the_name(self):
+        row, old = IamServiceToken.issue("platform")
+        new = row.rotate()
+
+        self.assertNotEqual(new, old)
+        self.assertIsNone(IamServiceToken.resolve(old))
+        self.assertEqual(IamServiceToken.resolve(new), row)
+        self.assertEqual(IamServiceToken.objects.filter(name="platform").count(), 1)
+
+    def test_rotate_revives_a_revoked_token(self):
+        """The name is unique, so rotation is the only way back from --revoke."""
+        row, _ = IamServiceToken.issue("platform")
+        IamServiceToken.objects.filter(pk=row.pk).update(is_active=False)
+        row.refresh_from_db()
+
+        new = row.rotate()
+        self.assertEqual(IamServiceToken.resolve(new), row)
+
     def test_two_tokens_never_collide(self):
         _, a = IamServiceToken.issue("one")
         _, b = IamServiceToken.issue("two")

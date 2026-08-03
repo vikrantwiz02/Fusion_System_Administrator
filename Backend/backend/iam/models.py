@@ -119,6 +119,19 @@ class IamServiceToken(models.Model):
         raw = cls.PREFIX + secrets.token_urlsafe(32)
         return cls.objects.create(name=name, token_hash=cls.hash_raw(raw)), raw
 
+    def rotate(self) -> str:
+        """New secret under the same name; the old value stops working at once.
+
+        Names are unique, so rotation — not a second row — is how a token is
+        replaced without renaming every caller's configuration.
+        """
+        raw = type(self).PREFIX + secrets.token_urlsafe(32)
+        self.token_hash = type(self).hash_raw(raw)
+        self.is_active = True
+        self.last_used_at = None
+        self.save(update_fields=["token_hash", "is_active", "last_used_at"])
+        return raw
+
     @classmethod
     def resolve(cls, raw: str) -> "IamServiceToken | None":
         if not raw or not raw.startswith(cls.PREFIX):
