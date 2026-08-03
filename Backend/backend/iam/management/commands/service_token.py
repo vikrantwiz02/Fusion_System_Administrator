@@ -46,8 +46,7 @@ class Command(BaseCommand):
     def _issue(self, name):
         existing = IamServiceToken.objects.filter(name=name).first()
         if existing is not None:
-            # Revoking does not free the name: it is unique, and the row stays
-            # so "who held this?" survives. Rotation is the way back.
+            # Revoking does not free the name: it is unique and the row stays.
             state = "active" if existing.is_active else "revoked"
             raise CommandError(
                 f"A token named {name!r} already exists ({state}). Names are "

@@ -1,14 +1,9 @@
 """Seed designation -> permission mappings from the platform's manifest.
 
-The platform owns the mapping: it declares the permissions its views guard on
-and which designations may hold them, and its CI refuses a code no designation
-can hold. This command only stores the answer.
+    manage.py seed_iam_permissions --manifest .../registry/permissions.json
 
-    manage.py seed_iam_permissions --manifest /srv/fusion/platform/current/registry/permissions.json
-
-Idempotent. Rows for a module in the manifest that the manifest no longer lists
-are removed, so revoking a grant upstream actually revokes it here; modules
-absent from the manifest are left untouched.
+Idempotent, and authoritative only for the modules the manifest names: a grant
+dropped upstream is revoked here, other modules are untouched.
 """
 import json
 from pathlib import Path

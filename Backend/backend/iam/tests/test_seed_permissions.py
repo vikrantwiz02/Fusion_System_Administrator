@@ -1,9 +1,4 @@
-"""Seeding from the platform's manifest.
-
-The invariant: the manifest is authoritative for the modules it names, and for
-nothing else. Getting that wrong in either direction is an RBAC change nobody
-asked for.
-"""
+"""Seeding from the platform's manifest: authoritative for the modules it names, and nothing else."""
 import json
 from io import StringIO
 from tempfile import TemporaryDirectory

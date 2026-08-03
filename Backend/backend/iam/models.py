@@ -120,11 +120,7 @@ class IamServiceToken(models.Model):
         return cls.objects.create(name=name, token_hash=cls.hash_raw(raw)), raw
 
     def rotate(self) -> str:
-        """New secret under the same name; the old value stops working at once.
-
-        Names are unique, so rotation — not a second row — is how a token is
-        replaced without renaming every caller's configuration.
-        """
+        """New secret under the same name; the old value stops working at once."""
         raw = type(self).PREFIX + secrets.token_urlsafe(32)
         self.token_hash = type(self).hash_raw(raw)
         self.is_active = True
@@ -161,8 +157,7 @@ class RolePermission(models.Model):
     The ERP has designations and a module-access table, but no concept of a
     permission. Rather than invent a parallel role system, this maps the
     designations that already exist onto the permission codes the platform
-    checks. The platform owns the mapping; `manage.py seed_iam_permissions`
-    stores it from the manifest that platform's CI validates.
+    checks. The platform owns the mapping; seed_iam_permissions stores it.
     """
 
     designation = models.CharField(max_length=155, db_index=True)
