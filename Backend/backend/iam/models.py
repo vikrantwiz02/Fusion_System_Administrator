@@ -256,18 +256,28 @@ class IamUserDesignation(models.Model):
 class IamDesignationModule(models.Model):
     """Which modules a designation may enter.
 
-    Projected from globals_moduleaccess, whose one-boolean-column-per-module
-    shape stays behind in the ERP. Here a grant is a ROW.
+    Two writers, so every row records which one put it there. The ERP projection
+    rewrites globals_moduleaccess wholesale; a service's permission manifest owns
+    the modules it declares. Without `source` the second writer's rows look like
+    stale rows to the first, and a sync silently revokes a working module. Reads
+    are the union — a grant from either source is a grant.
     """
+
+    ERP = "erp"
+    MANIFEST = "manifest"
 
     designation = models.CharField(max_length=155, db_index=True)
     module_code = models.CharField(max_length=48)
+    source = models.CharField(
+        max_length=16, default=ERP,
+        choices=[(ERP, "ERP projection"), (MANIFEST, "Service manifest")])
 
     class Meta:
         db_table = "iam_designation_module"
         constraints = [
-            models.UniqueConstraint(fields=["designation", "module_code"],
-                                    name="iam_designation_module_unique"),
+            models.UniqueConstraint(
+                fields=["designation", "module_code", "source"],
+                name="iam_designation_module_unique"),
         ]
 
 
@@ -330,6 +340,7 @@ class SyncRun(models.Model):
     users_written = models.IntegerField(default=0)
     designations_written = models.IntegerField(default=0)
     module_grants_written = models.IntegerField(default=0)
+    role_violations = models.IntegerField(default=0)
     academics_written = models.IntegerField(default=0)
     deactivated = models.IntegerField(default=0)
     error = models.TextField(blank=True)
@@ -343,3 +354,76 @@ class SyncRun(models.Model):
         if not self.finished_at:
             return None
         return (self.finished_at - self.started_at).total_seconds()
+
+
+class IamRole(models.Model):
+    """The role catalogue: what a designation IS, and who may hold it.
+
+    Fusion has one *basic* role per person — student, faculty or staff — which
+    comes from the ERP and nobody assigns. Everything else is held on top of it,
+    and a person may hold several: a faculty member is an Associate Professor and
+    a HOD and the Dean Academic at once.
+
+    What the ERP cannot express is that the two kinds are not interchangeable.
+    `globals_holdsdesignation` is a plain join table, so nothing stops a student
+    being made Dean Academic — and in the live data, one is. This table is the
+    missing half: each role says which basic roles may hold it.
+    """
+
+    BASIC = "basic"
+    RANK = "rank"
+    OFFICE = "office"
+    FUNCTIONAL = "functional"
+    CATEGORIES = [
+        (BASIC, "Basic role — what a person is"),
+        (RANK, "Academic rank"),
+        (OFFICE, "Office held"),
+        (FUNCTIONAL, "Functional role"),
+    ]
+
+    code = models.CharField(max_length=155, unique=True)
+    label = models.CharField(max_length=155, blank=True)
+    category = models.CharField(max_length=16, choices=CATEGORIES)
+    #: Basic roles that may hold this one. Stored sorted and comma-joined; a
+    #: list column would need a JSONField for three short words.
+    allowed_kinds = models.CharField(max_length=100)
+    is_active = models.BooleanField(default=True)
+
+    class Meta:
+        db_table = "iam_role"
+        ordering = ["category", "code"]
+
+    def __str__(self) -> str:
+        return self.code
+
+    @property
+    def kinds(self) -> set[str]:
+        return {k for k in self.allowed_kinds.split(",") if k}
+
+    def may_be_held_by(self, kind: str) -> bool:
+        return kind in self.kinds
+
+
+class IamRoleViolation(models.Model):
+    """A held role its holder's basic role does not permit.
+
+    Rewritten on every sync, so the table is always the current picture rather
+    than a log. Reported by default and only refused once the policy is switched
+    to enforce — the catalogue is a claim about institute practice, and refusing
+    on day one would lock out whoever the claim is wrong about.
+    """
+
+    erp_user_id = models.IntegerField(db_index=True)
+    username = models.CharField(max_length=150)
+    kind = models.CharField(max_length=20)
+    designation = models.CharField(max_length=155)
+    enforced = models.BooleanField(default=False)
+    detected_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = "iam_role_violation"
+        ordering = ["username", "designation"]
+        constraints = [
+            models.UniqueConstraint(fields=["erp_user_id", "designation"],
+                                    name="iam_role_violation_unique"),
+        ]

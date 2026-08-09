@@ -93,6 +93,34 @@ def all_user_designations() -> list[tuple[int, str]]:
     ]
 
 
+#: Programme category -> the role a student in it holds, on top of `student`.
+#: Derived, never assigned: what someone is studying is not a role anybody grants.
+PROGRAMME_ROLES = {"UG": "ug_student", "PG": "pg_student", "PHD": "phd_student"}
+
+
+def all_student_programme_roles() -> list[tuple[int, str]]:
+    """(erp_user_id, role) for every student, from what they are enrolled on.
+
+    A UG student is not a research scholar and a PhD scholar does not register
+    for a B.Tech elective, but `globals_holdsdesignation` says only "student"
+    for all 3,027 of them — so a permission meant for one reaches all.
+
+    The category comes from the curriculum the batch belongs to, not from
+    `academic_information_student.programme`: that column holds "M.Tech", which
+    is a programme NAME, and the names in programme_curriculum_programme are
+    finer ("M.Tech CSE AI & ML"), so matching on it would resolve nothing. The
+    batch -> curriculum -> programme join resolves all 3,027.
+    """
+    rows = (Student.objects
+            .exclude(batch_id__isnull=True)
+            .values_list("id__user_id", "batch_id__curriculum__programme__category"))
+    return [
+        (user_id, PROGRAMME_ROLES[category])
+        for user_id, category in rows
+        if user_id and category in PROGRAMME_ROLES
+    ]
+
+
 def all_designation_modules() -> list[tuple[str, str]]:
     """(designation, module_code) for every true boolean in globals_moduleaccess."""
     out: list[tuple[str, str]] = []

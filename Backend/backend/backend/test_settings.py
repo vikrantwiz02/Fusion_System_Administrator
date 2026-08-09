@@ -38,3 +38,8 @@ DATABASES = {
         "PORT": "5432",
     },
 }
+
+# Same reason again: whether a role policy violation is refused or merely
+# reported is a deployment decision, and a suite whose result depends on the
+# local .env is not a suite. Tests that care set it with override_settings.
+IAM_ENFORCE_ROLE_POLICY = False

@@ -166,13 +166,15 @@ class SessionTests(TestCase):
         self.assertEqual(services.build_session(token), {})
 
     def test_no_designations_means_no_modules_not_all_modules(self):
+        """The basic role is held by definition, so `roles` is never empty — but
+        nothing is granted to it here, and an ungranted role opens nothing."""
         make_user(uid=8, username="ghost", kind="staff")
         token = IamToken.issue(erp_user_id=8, username="ghost")
         s = services.build_session(token)
-        self.assertEqual(s["roles"], [])
+        self.assertEqual(s["roles"], ["staff"])
         self.assertEqual(s["modules"], [])
         self.assertEqual(s["permissions"], [])
-        self.assertIsNone(s["active_role"])
+        self.assertEqual(s["active_role"], "staff")
 
 
 class DirectoryTests(TestCase):

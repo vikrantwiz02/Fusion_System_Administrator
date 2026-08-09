@@ -271,3 +271,7 @@ STATIC_URL = "static/"
 # https://docs.djangoproject.com/en/5.1/ref/settings/#default-auto-field
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
+
+# Report role-policy violations rather than refuse them, until the catalogue in
+# iam/rbac.py has been confirmed against how the institute actually works.
+IAM_ENFORCE_ROLE_POLICY = env.bool("IAM_ENFORCE_ROLE_POLICY", default=False)

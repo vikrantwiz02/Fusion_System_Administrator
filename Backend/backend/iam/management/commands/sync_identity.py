@@ -6,8 +6,10 @@
 Idempotent — safe to run on a schedule and safe to re-run after a failure.
 Intended cadence: every 5-15 minutes via cron or django_apscheduler.
 """
+from django.conf import settings
 from django.core.management.base import BaseCommand
 
+from iam.models import IamRoleViolation
 from iam.services import identity_freshness
 from iam.sync import sync_all
 
@@ -44,4 +46,14 @@ class Command(BaseCommand):
             f"  academic standings {run.academics_written}\n"
             f"  deactivated        {run.deactivated}\n"
             f"  took               {run.duration_seconds:.1f}s")
+
+        if run.role_violations:
+            verb = "refused" if settings.IAM_ENFORCE_ROLE_POLICY else "allowed"
+            self.stdout.write(self.style.WARNING(
+                f"  {run.role_violations} role(s) a basic role may not hold, "
+                f"{verb} — see iam_role_violation:"))
+            for v in IamRoleViolation.objects.all()[:20]:
+                self.stdout.write(self.style.WARNING(
+                    f"    {v.username} ({v.kind}) holds {v.designation}"))
+
         self.stdout.write(self.style.SUCCESS(f"  {run.status}"))

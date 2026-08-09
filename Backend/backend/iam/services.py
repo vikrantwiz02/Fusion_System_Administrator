@@ -140,10 +140,13 @@ def build_session(token: IamToken) -> dict:
     if user is None or not user.is_active:
         return {}
 
+    # The basic role is held by definition, not assigned. The ERP records it as
+    # extrainfo.user_type and has no designation row for it, so a grant written
+    # against `faculty` would otherwise reach nobody, and the 121 staff who hold
+    # no designation at all would have no role whatsoever.
     roles = designations_for(user.erp_user_id)
-    if user.kind == "student" and "student" not in roles:
-        # Students hold no HoldsDesignation row; their user_type IS the role.
-        roles = ["student", *roles]
+    if user.kind not in roles:
+        roles = [user.kind, *roles]
 
     payload = {
         "user": {
@@ -153,7 +156,10 @@ def build_session(token: IamToken) -> dict:
             "kind": user.kind,
             "email": user.email,
         },
-        "active_role": roles[0] if roles else None,
+        "basic_role": user.kind,
+        # An office outranks the basic role as a default: a Junior Assistant
+        # should land in their office, not on the generic staff view.
+        "active_role": next((r for r in roles if r != user.kind), user.kind),
         "roles": roles,
         "permissions": permissions_for(roles),
         "modules": modules_for(roles),

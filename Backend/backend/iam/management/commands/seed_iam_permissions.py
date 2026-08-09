@@ -11,7 +11,7 @@ from pathlib import Path
 from django.core.management.base import BaseCommand, CommandError
 from django.db import transaction
 
-from iam.models import RolePermission
+from iam.models import IamDesignationModule, RolePermission
 
 SUPPORTED_VERSION = 1
 
@@ -68,6 +68,8 @@ class Command(BaseCommand):
     @transaction.atomic
     def _apply(self, manifest: dict, *, dry_run: bool):
         added, removed = [], []
+        self._apply_module_grants(manifest, dry_run=dry_run, added=added,
+                                  removed=removed)
         for module_code, spec in sorted(manifest["modules"].items()):
             wanted = {
                 (designation, code)
@@ -93,3 +95,37 @@ class Command(BaseCommand):
 
             self.stdout.write(f"  {module_code}: {len(wanted)} mapping(s)")
         return added, removed
+
+    def _apply_module_grants(self, manifest, *, dry_run, added, removed):
+        """The coarse gate, alongside the fine one.
+
+        Two separate checks guard every endpoint: may this role enter the module
+        at all, and may it do this action. Seeding only the permissions leaves a
+        user with every permission correct and every screen 403.
+
+        Scoped to manifest-sourced rows, so this never disturbs what the ERP
+        projection grants and the projection never disturbs this.
+        """
+        for module_code, spec in sorted(manifest["modules"].items()):
+            if "module_grants" not in spec:
+                # An older platform that predates this key states nothing about
+                # the coarse gate. Reading silence as "revoke all" would lock
+                # every user out of a module that is working fine.
+                continue
+
+            wanted = set(spec["module_grants"])
+            existing = IamDesignationModule.objects.filter(
+                module_code=module_code, source=IamDesignationModule.MANIFEST)
+            have = set(existing.values_list("designation", flat=True))
+
+            for designation in sorted(wanted - have):
+                added.append(f"{designation}: module {module_code}")
+                if not dry_run:
+                    IamDesignationModule.objects.get_or_create(
+                        designation=designation, module_code=module_code,
+                        source=IamDesignationModule.MANIFEST)
+
+            for designation in sorted(have - wanted):
+                removed.append(f"{designation}: module {module_code}")
+                if not dry_run:
+                    existing.filter(designation=designation).delete()

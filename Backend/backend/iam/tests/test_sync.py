@@ -41,7 +41,8 @@ def academic(roll, cpi="8.0", **over):
     return row
 
 
-def fake_erp(users=(), designations=(), grants=(), academics=()):
+def fake_erp(users=(), designations=(), grants=(), academics=(),
+             programme_roles=()):
     """A stand-in for iam.erp_source with the same callables.
 
     Must mirror the real module exactly. When erp_source grows a function, it
@@ -51,6 +52,7 @@ def fake_erp(users=(), designations=(), grants=(), academics=()):
     return SimpleNamespace(
         iter_users=lambda batch_size=500: iter([list(users)] if users else []),
         all_user_designations=lambda: list(designations),
+        all_student_programme_roles=lambda: list(programme_roles),
         all_designation_modules=lambda: list(grants),
         all_academic_standings=lambda: list(academics),
         fetch_password_hash=lambda username: None,
@@ -136,6 +138,28 @@ class SyncTests(TestCase):
         granted = set(IamDesignationModule.objects.filter(designation="student")
                       .values_list("module_code", flat=True))
         self.assertEqual(granted, {"placement_cell"})
+
+    def test_the_sync_leaves_manifest_granted_modules_alone(self):
+        """Two writers share this table, and the ERP is not authoritative here.
+
+        A service declares its own modules and seeds them as `manifest`. If the
+        projection deleted by module code rather than by source, a code the ERP
+        also happens to know — `examinations` is both a globals_moduleaccess
+        column and a Fusion-Academic module — would lose every grant the ERP
+        does not repeat, silently, on the next sync.
+        """
+        IamDesignationModule.objects.create(
+            designation="faculty", module_code="examinations",
+            source=IamDesignationModule.MANIFEST)
+
+        with patch.object(sync, "erp_source",
+                          fake_erp(users=[user(1, "alice")],
+                                   grants=[("student", "examinations")])):
+            sync.sync_all()
+
+        granted = set(IamDesignationModule.objects.filter(
+            module_code="examinations").values_list("designation", flat=True))
+        self.assertEqual(granted, {"faculty", "student"})
 
     def test_a_vanished_user_is_deactivated_never_deleted(self):
         """Applications and audit rows reference the id; a hard delete would
@@ -225,3 +249,27 @@ class SyncTests(TestCase):
                                    designations=[(1, "student"), (1, "student")])):
             run = sync.sync_all()
         self.assertEqual(run.designations_written, 1)
+
+
+class FakeMatchesReal(TestCase):
+    """The docstring on fake_erp says it must mirror erp_source. This is what
+    makes that true rather than aspirational: a fake missing the function the
+    sync just started calling makes the sync look tested when it is not."""
+
+    def test_the_fake_offers_everything_the_sync_reads(self):
+        from iam import erp_source
+
+        used = {
+            name for name in dir(erp_source)
+            if not name.startswith("_") and callable(getattr(erp_source, name))
+            and getattr(erp_source, name).__module__ == erp_source.__name__
+        }
+        offered = set(vars(fake_erp()))
+        # The fake need not offer helpers the sync never calls, only the ones it
+        # already stands in for plus anything newly added beside them.
+        missing = {n for n in used if n in {
+            "iter_users", "all_user_designations", "all_designation_modules",
+            "all_academic_standings", "fetch_password_hash",
+            "all_student_programme_roles",
+        }} - offered
+        self.assertEqual(missing, set())

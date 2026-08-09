@@ -10,12 +10,13 @@ from __future__ import annotations
 
 import logging
 
+from django.conf import settings
 from django.db import transaction
 from django.utils import timezone
 
-from iam import erp_source
-from iam.models import (IamDesignationModule, IamUser, IamUserAcademic,
-                        IamUserDesignation, SyncRun)
+from iam import erp_source, rbac
+from iam.models import (IamDesignationModule, IamRoleViolation, IamUser,
+                        IamUserAcademic, IamUserDesignation, SyncRun)
 
 log = logging.getLogger("fusion.iam.sync")
 
@@ -48,8 +49,12 @@ def sync_all(*, batch_size: int = 500, deactivate_missing: bool = True) -> SyncR
         run.users_written = written
 
         with transaction.atomic(using="system_db"):
-            run.designations_written = _replace_designations(
-                erp_source.all_user_designations())
+            run.role_violations = _replace_designations(
+                [*erp_source.all_user_designations(),
+                 # Derived, not held: what someone is studying decides which
+                 # student-facing permissions reach them, and the ERP records
+                 # "student" for all 3,027 regardless of programme.
+                 *erp_source.all_student_programme_roles()], run)
             run.module_grants_written = _replace_module_grants(
                 erp_source.all_designation_modules())
             run.academics_written = _replace_academics(
@@ -76,24 +81,51 @@ def sync_all(*, batch_size: int = 500, deactivate_missing: bool = True) -> SyncR
     return run
 
 
-def _replace_designations(pairs: list[tuple[int, str]]) -> int:
-    """Replace wholesale rather than diff.
+def _replace_designations(pairs: list[tuple[int, str]], run: SyncRun) -> int:
+    """Replace wholesale rather than diff, checking the role policy on the way.
 
     A designation being *removed* is the security-relevant change, and a diff
     that only adds would silently keep revoked roles alive. Wholesale replace
     inside a transaction cannot get that wrong.
+
+    The policy check happens here because here is where the ERP's answer becomes
+    IAM's answer. A role its holder's basic role may not hold is always recorded;
+    it is only withheld when IAM_ENFORCE_ROLE_POLICY is on. Returns the violation
+    count; run.designations_written is set as a side effect.
     """
+    identity = dict(IamUser.objects.values_list("erp_user_id", "kind"))
+    usernames = dict(IamUser.objects.values_list("erp_user_id", "username"))
+    found = rbac.violations(pairs, identity, usernames)
+    enforcing = getattr(settings, "IAM_ENFORCE_ROLE_POLICY", False)
+
+    refused = {(v["erp_user_id"], v["designation"]) for v in found} if enforcing \
+        else set()
+
     IamUserDesignation.objects.all().delete()
     rows = [IamUserDesignation(erp_user_id=uid, designation=name)
-            for uid, name in set(pairs)]
+            for uid, name in set(pairs) if (uid, name) not in refused]
     IamUserDesignation.objects.bulk_create(rows, batch_size=1000)
-    return len(rows)
+
+    IamRoleViolation.objects.all().delete()
+    IamRoleViolation.objects.bulk_create(
+        [IamRoleViolation(enforced=enforcing, **v) for v in found],
+        batch_size=1000)
+
+    run.designations_written = len(rows)
+    return len(found)
 
 
 def _replace_module_grants(pairs: list[tuple[str, str]]) -> int:
-    """Same reasoning: a revoked module grant must actually disappear."""
-    IamDesignationModule.objects.all().delete()
-    rows = [IamDesignationModule(designation=d, module_code=m)
+    """Same reasoning: a revoked module grant must actually disappear.
+
+    Scoped to this writer's own rows. A service that declares its own modules
+    seeds them as `manifest`, and a wholesale delete here would wipe those on
+    every sync — every user silently losing a module that was working.
+    """
+    IamDesignationModule.objects.filter(
+        source=IamDesignationModule.ERP).delete()
+    rows = [IamDesignationModule(designation=d, module_code=m,
+                                 source=IamDesignationModule.ERP)
             for d, m in set(pairs)]
     IamDesignationModule.objects.bulk_create(rows, batch_size=1000)
     return len(rows)
