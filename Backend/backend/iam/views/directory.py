@@ -4,7 +4,7 @@ from rest_framework.views import APIView
 
 from api.authentication import CookieTokenAuthentication
 from iam.authentication import IamServiceAuthentication, IamTokenAuthentication
-from iam.services import directory_users, search_directory
+from iam.services import directory_users, employee_page, search_directory
 
 
 class DirectoryUsersView(APIView):
@@ -12,6 +12,7 @@ class DirectoryUsersView(APIView):
 
         ?ids=1,2,3     batched lookup — the platform's normal path
         ?q=asha&kind=  type-ahead search
+        ?employees=1   the whole payroll, paged, for a consumer's projection
 
     Accepts an ERP-user session, an operator cookie, or a peer service's
     credential — Fusion-Integrated calls this server-to-server as well as on
@@ -34,6 +35,12 @@ class DirectoryUsersView(APIView):
                 return Response({"detail": "ids must be comma-separated integers."},
                                 status=400)
             return Response({"results": directory_users(ids[:500])})
+
+        if request.query_params.get("employees"):
+            return Response(employee_page(
+                limit=min(int(request.query_params.get("limit", 500)), 1000),
+                offset=int(request.query_params.get("offset", 0)),
+            ))
 
         return Response({"results": search_directory(
             q=request.query_params.get("q", ""),

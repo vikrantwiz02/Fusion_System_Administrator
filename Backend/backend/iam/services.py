@@ -209,6 +209,26 @@ def search_directory(q: str = "", kind: str | None = None,
     return [_to_row(u) for u in qs.order_by("username")[:limit]]
 
 
+def employee_page(limit: int = 500, offset: int = 0) -> dict:
+    """Every employee, a page at a time.
+
+    Consumers project this locally and act on the whole set -- leave credits a
+    year's entitlement to all of them. The search above cannot serve that: it
+    caps at 100 and has no total, so a caller has no way to tell a complete
+    answer from a truncated one and would act on a fraction of the institute
+    believing it had everybody.
+    """
+    qs = IamUser.objects.filter(is_active=True, kind__in=("faculty", "staff"))
+    total = qs.count()
+    rows = qs.order_by("erp_user_id")[offset:offset + limit]
+    return {
+        "count": total,
+        "limit": limit,
+        "offset": offset,
+        "results": [_to_row(u) for u in rows],
+    }
+
+
 # -- academic standing (declared CPI) ------------------------------------------
 def _academic_row(a: IamUserAcademic) -> dict:
     return {
