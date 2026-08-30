@@ -19,6 +19,11 @@ Anything failing one of those is reported and left alone. It deactivates rather
 than deletes: other tables reference these ids, and a reversible change is the
 right shape for a correction made from a script.
 
+It also reports a second class it will not touch: two accounts whose usernames
+differ only by whitespace. Those are one person with a duplicate login, and
+resolving them means deciding which account keeps their designations -- a
+decision about somebody's role, not a repair.
+
 Dry run by default.
 """
 from django.core.management.base import BaseCommand
@@ -42,6 +47,7 @@ class Command(BaseCommand):
         ]
         if not suspects:
             self.stdout.write(self.style.SUCCESS("  no malformed usernames"))
+            self._report_duplicates()
             return
 
         classified = set(GlobalsExtrainfo.objects.values_list("user_id", flat=True))
@@ -71,6 +77,8 @@ class Command(BaseCommand):
                 f"  LEFT ALONE user {u.id}: malformed username but {'; '.join(reasons)} "
                 "— needs a person to look at it"))
 
+        self._report_duplicates()
+
         live = [a for a in artifacts if a[0].is_active]
         if not opts["fix"]:
             self.stdout.write(self.style.WARNING(
@@ -81,3 +89,35 @@ class Command(BaseCommand):
             AuthUser.objects.filter(pk__in=[a[0].pk for a in live]).update(is_active=False)
         self.stdout.write(self.style.SUCCESS(
             f"  deactivated {len(live)} row(s). Run sync_identity to carry it across."))
+
+    def _whitespace_duplicates(self) -> list[tuple]:
+        """Accounts that are the same username once trimmed."""
+        by_trimmed: dict[str, list] = {}
+        for u in AuthUser.objects.all().only("id", "username", "last_login", "is_active"):
+            by_trimmed.setdefault(u.username.strip(), []).append(u)
+        return [(k, v) for k, v in sorted(by_trimmed.items()) if len(v) > 1]
+
+    def _report_duplicates(self) -> None:
+        pairs = self._whitespace_duplicates()
+        if not pairs:
+            return
+        employed = dict(
+            GlobalsHoldsdesignation.objects.values_list("user_id", "designation_id"))
+        classified = set(GlobalsExtrainfo.objects.values_list("user_id", flat=True))
+        self.stdout.write(self.style.WARNING(
+            f"\n  {len(pairs)} username(s) exist twice, differing only by whitespace. "
+            "One person, two logins. Not touched -- which account keeps their "
+            "designations is a decision about their role:"))
+        for name, users in pairs:
+            self.stdout.write(f"    {name!r}")
+            for u in sorted(users, key=lambda x: x.id):
+                marks = []
+                if u.id in classified:
+                    marks.append("has profile")
+                if u.id in employed:
+                    marks.append("holds designation")
+                marks.append("has logged in" if u.last_login else "never logged in")
+                if not u.is_active:
+                    marks.append("inactive")
+                self.stdout.write(
+                    f"      user {u.id:<6} {u.username!r:<20} {', '.join(marks)}")
