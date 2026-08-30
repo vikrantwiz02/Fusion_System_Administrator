@@ -47,6 +47,14 @@ def iter_users(batch_size: int = 500) -> Iterator[list[dict]]:
         e.user_id: e
         for e in GlobalsExtrainfo.objects.select_related("department").all()
     }
+    # A designation is evidence of employment; the absence of everything is
+    # not. Without this, an account the ERP cannot classify at all was called
+    # staff, which invented 92 colleagues out of orphaned auth_user rows and
+    # would have credited each of them a year's leave.
+    employed = set(
+        GlobalsHoldsdesignation.objects.values_list("user_id", flat=True).distinct()
+    )
+
     # Student rows key on extrainfo.id, not user_id.
     students = {
         s.id_id: s
@@ -64,7 +72,7 @@ def iter_users(batch_size: int = 500) -> Iterator[list[dict]]:
             "username": u.username,
             "display_name": f"{u.first_name} {u.last_name}".strip() or u.username,
             "email": u.email or "",
-            "kind": (e.user_type or "staff").lower() if e else "staff",
+            "kind": _kind(e, u.id in employed),
             "is_active": bool(u.is_active),
             "password_hash": u.password or "",
             "department": getattr(getattr(e, "department", None), "name", "") or "",
@@ -77,6 +85,18 @@ def iter_users(batch_size: int = 500) -> Iterator[list[dict]]:
             batch = []
     if batch:
         yield batch
+
+
+def _kind(extra, holds_designation: bool) -> str:
+    """What the ERP can actually say this person is.
+
+    `unknown` is a real answer and a useful one: it keeps the account visible
+    for display and audit while excluding it from anything that acts on
+    employees. Guessing `staff` instead put orphaned rows on the payroll.
+    """
+    if extra is not None:
+        return (extra.user_type or "staff").lower()
+    return "staff" if holds_designation else "unknown"
 
 
 def all_user_designations() -> list[tuple[int, str]]:

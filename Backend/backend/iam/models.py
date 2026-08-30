@@ -203,13 +203,17 @@ class IamUser(models.Model):
     """A person, projected from the ERP's auth_user + extrainfo + student/faculty."""
 
     KINDS = [("student", "Student"), ("faculty", "Faculty"),
-             ("staff", "Staff"), ("compounder", "Compounder")]
+             ("staff", "Staff"), ("compounder", "Compounder"),
+             # The ERP has nothing on which to classify this account. Never a
+             # guess: an invented kind becomes an invented entitlement.
+             ("unknown", "Unclassified")]
 
     erp_user_id = models.IntegerField(primary_key=True)
     username = models.CharField(max_length=150, unique=True)
     display_name = models.CharField(max_length=300, blank=True)
     email = models.CharField(max_length=254, blank=True)
-    kind = models.CharField(max_length=20, choices=KINDS, default="staff", db_index=True)
+    kind = models.CharField(max_length=20, choices=KINDS, default="unknown",
+                            db_index=True)
     is_active = models.BooleanField(default=True)
 
     # Copied so login does not need the ERP. If it goes stale (a reset done in
