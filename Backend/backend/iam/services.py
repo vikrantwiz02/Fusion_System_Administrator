@@ -187,6 +187,10 @@ def _to_row(u: IamUser) -> dict:
         "programme": u.programme,
         "discipline": u.discipline,
         "batch_year": u.batch_year,
+        # Consumers project this locally and act on the projection. Without it
+        # a deactivated account stays active in every projection for ever,
+        # because nothing they receive ever says otherwise.
+        "is_active": u.is_active,
     }
 
 
