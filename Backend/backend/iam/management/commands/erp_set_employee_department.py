@@ -14,12 +14,17 @@ Writes to the ERP, so: an existing department is never overwritten without
 --dry-run shows the plan.
 """
 import csv
+from datetime import date
 
 from django.core.management.base import BaseCommand, CommandError
 from django.db import transaction
 
 from api.models.erp import (AuthUser, GlobalsDepartmentinfo, GlobalsExtrainfo,
                             GlobalsHoldsdesignation)
+
+
+def _nullable(field: str) -> bool:
+    return GlobalsExtrainfo._meta.get_field(field).null
 
 PLACEHOLDER = "UNASSIGNED (placeholder)"
 
@@ -182,7 +187,21 @@ class Command(BaseCommand):
         not this command's business.
         """
         key = user.username.strip()
+        # Every NOT NULL column, not just the interesting ones. The ERP's
+        # schema is stricter than its data: date_of_birth, address and about_me
+        # have no defaults, so a partial row fails at insert. This path never
+        # ran on the live institute -- the one candidate was blocked earlier by
+        # a duplicate key -- so it was wrong and untested until the ERP tables
+        # could be built in a test database.
         GlobalsExtrainfo.objects.create(
-            id=key, user=user, department=dept,
-            user_type="staff", user_status="PRESENT", title="", sex="",
+            id=key,
+            user=user,
+            department=dept,
+            user_type="staff",
+            user_status="PRESENT",
+            title="",
+            sex="",
+            date_of_birth=None if _nullable("date_of_birth") else date(1970, 1, 1),
+            address="",
+            about_me="",
         )
