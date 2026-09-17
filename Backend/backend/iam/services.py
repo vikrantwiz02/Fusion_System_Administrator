@@ -187,9 +187,7 @@ def _to_row(u: IamUser) -> dict:
         "programme": u.programme,
         "discipline": u.discipline,
         "batch_year": u.batch_year,
-        # Consumers project this locally and act on the projection. Without it
-        # a deactivated account stays active in every projection for ever,
-        # because nothing they receive ever says otherwise.
+        # Consumers act on their projection, so it must be able to retire an account.
         "is_active": u.is_active,
     }
 
@@ -214,14 +212,7 @@ def search_directory(q: str = "", kind: str | None = None,
 
 
 def employee_page(limit: int = 500, offset: int = 0) -> dict:
-    """Every employee, a page at a time.
-
-    Consumers project this locally and act on the whole set -- leave credits a
-    year's entitlement to all of them. The search above cannot serve that: it
-    caps at 100 and has no total, so a caller has no way to tell a complete
-    answer from a truncated one and would act on a fraction of the institute
-    believing it had everybody.
-    """
+    """Every employee, a page at a time."""
     qs = IamUser.objects.filter(is_active=True, kind__in=("faculty", "staff"))
     total = qs.count()
     rows = qs.order_by("erp_user_id")[offset:offset + limit]

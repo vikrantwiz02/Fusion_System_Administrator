@@ -1,9 +1,4 @@
-"""What the ERP can say someone is, and what it cannot.
-
-The projection used to call an account `staff` whenever the ERP had nothing on
-it. That invented 92 colleagues out of orphaned auth_user rows -- and an
-invented colleague draws a real year of leave entitlement downstream.
-"""
+"""What the ERP can say someone is, and what it cannot."""
 from types import SimpleNamespace
 
 from django.test import SimpleTestCase
@@ -28,13 +23,11 @@ class KindInferenceTests(SimpleTestCase):
         assert _kind(extra(""), holds_designation=False) == "staff"
 
     def test_an_unclassified_account_holding_a_designation_is_staff(self):
-        # The designation is the evidence of employment; the missing
-        # ExtraInfo is a gap in the record, not a statement about them.
+        # The designation is the evidence; the missing ExtraInfo is a gap in the record.
         assert _kind(None, holds_designation=True) == "staff"
 
     def test_an_unclassified_account_with_nothing_at_all_is_unknown(self):
-        # Regression: this used to return "staff" and put orphaned rows on the
-        # payroll.
+        # Regression: this used to return "staff" and put orphaned rows on the payroll.
         assert _kind(None, holds_designation=False) == "unknown"
 
     def test_unknown_is_a_declared_kind_and_the_model_default(self):

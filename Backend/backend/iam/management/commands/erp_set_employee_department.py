@@ -1,18 +1,4 @@
-"""Set the department an employee belongs to.
-
-Leave routes a request to the head of the applicant's unit, and the unit is
-this field. An employee without one has a request that no queue can show and no
-head can act on, so it sits until somebody notices -- which makes this a gap
-worth filling deliberately rather than leaving blank.
-
-Feed real values with --csv or --set. --placeholder fills the gap meanwhile
-with a department named so that nobody mistakes it for a real one, and
---report lists who is still waiting for a real answer.
-
-Writes to the ERP, so: an existing department is never overwritten without
---force, an unknown department name is refused rather than created, and
---dry-run shows the plan.
-"""
+"""Set the department an employee belongs to."""
 import csv
 from datetime import date
 
@@ -109,13 +95,7 @@ class Command(BaseCommand):
             f"  {len(planned)} written. Run sync_identity to carry it across."))
 
     def _blocked(self, user) -> str:
-        """Why this account cannot simply be given a department.
-
-        The extrainfo key is the username, so a collision means two accounts
-        differ only by whitespace: one person with a duplicate login. Giving the
-        spare one a department entrenches the split instead of fixing it, and
-        which account survives is a decision about somebody's role.
-        """
+        """Why this account cannot simply be given a department."""
         key = user.username.strip()
         clash = GlobalsExtrainfo.objects.filter(pk=key).exclude(user_id=user.id).first()
         if clash:
@@ -180,19 +160,9 @@ class Command(BaseCommand):
         return dept
 
     def _create_extrainfo(self, user, dept) -> None:
-        """Only for an employee the ERP never set up at all.
-
-        The identity fields are left empty rather than guessed: this row exists
-        to carry a department, and inventing a title or a sex for somebody is
-        not this command's business.
-        """
+        """Only for an employee the ERP never set up at all."""
         key = user.username.strip()
-        # Every NOT NULL column, not just the interesting ones. The ERP's
-        # schema is stricter than its data: date_of_birth, address and about_me
-        # have no defaults, so a partial row fails at insert. This path never
-        # ran on the live institute -- the one candidate was blocked earlier by
-        # a duplicate key -- so it was wrong and untested until the ERP tables
-        # could be built in a test database.
+        # Every NOT NULL column, not just the interesting ones.
         GlobalsExtrainfo.objects.create(
             id=key,
             user=user,

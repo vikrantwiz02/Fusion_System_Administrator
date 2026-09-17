@@ -1,31 +1,4 @@
-"""Deactivate auth_user rows that are import wreckage, not people.
-
-A failed spreadsheet import can write a whole tab-separated line into a single
-auth_user row: the entire line lands in `username`, fragments of the address in
-`first_name`/`last_name`, and a mangled address in `email`. The row is nobody.
-The real account from the same import usually exists alongside it.
-
-This is the one command here that writes to the ERP, so the signature it
-matches is deliberately narrow. A row is only touched when **all** of these
-hold:
-
-  * the username contains a tab or newline -- no real username ever does
-  * there is no globals_extrainfo row, so the ERP never classified it
-  * it holds no designation
-  * a different, active account already exists under the first field of that
-    line, so the real person is not being locked out
-
-Anything failing one of those is reported and left alone. It deactivates rather
-than deletes: other tables reference these ids, and a reversible change is the
-right shape for a correction made from a script.
-
-It also reports a second class it will not touch: two accounts whose usernames
-differ only by whitespace. Those are one person with a duplicate login, and
-resolving them means deciding which account keeps their designations -- a
-decision about somebody's role, not a repair.
-
-Dry run by default.
-"""
+"""Deactivate auth_user rows that are import wreckage, not people."""
 from django.core.management.base import BaseCommand
 from django.db import transaction
 

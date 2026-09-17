@@ -204,8 +204,7 @@ class IamUser(models.Model):
 
     KINDS = [("student", "Student"), ("faculty", "Faculty"),
              ("staff", "Staff"), ("compounder", "Compounder"),
-             # The ERP has nothing on which to classify this account. Never a
-             # guess: an invented kind becomes an invented entitlement.
+             # The ERP has nothing on which to classify this account.
              ("unknown", "Unclassified")]
 
     erp_user_id = models.IntegerField(primary_key=True)

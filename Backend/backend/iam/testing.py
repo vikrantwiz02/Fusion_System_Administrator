@@ -1,19 +1,4 @@
-"""Make the ERP's tables exist while tests run.
-
-This service reads a database it does not own, so every ERP model is
-`managed = False` and the test database gets none of their tables. That has
-meant the whole ERP-facing half of the app -- the projection, the kind
-inference, the four erp_* commands -- could not be tested at all: the suite
-failed during database setup, before a single test ran.
-
-It cannot be fixed from a test case, because `api.models.batches` has managed
-models carrying real foreign keys to `auth_user`. Migrating creates those
-constraints, so the referenced table has to exist *before* the first migration,
-not by the time the first test runs.
-
-`pre_migrate` is the one hook early enough. It is connected only while the test
-command is running, so production migrations are untouched.
-"""
+"""Make the ERP's tables exist while tests run."""
 from __future__ import annotations
 
 import sys
@@ -25,21 +10,14 @@ _built: set[str] = set()
 
 
 def _models():
-    """Every unmanaged model in the ERP shadow module.
-
-    Derived rather than listed. A hand-written list needs extending each time
-    the sync reads one more table, and the failure is a missing relation deep
-    in a test rather than anything that names the cause -- which is how this
-    was found: three rounds of adding one more table.
-    """
+    """Every unmanaged model in the ERP shadow module."""
     from django.apps import apps
 
     from api.models import erp
 
     return [
         model
-        # Not include_auto_created: create_model builds a model's own
-        # many-to-many tables, so listing them separately creates them twice.
+        # create_model builds a model's own M2M tables, so skip auto-created ones.
         for model in apps.get_app_config("api").get_models()
         if not model._meta.managed and model.__module__ == erp.__name__
     ]

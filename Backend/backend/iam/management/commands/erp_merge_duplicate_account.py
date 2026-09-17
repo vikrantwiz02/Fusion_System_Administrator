@@ -1,38 +1,16 @@
-"""Fold a duplicate login into the account the person actually uses.
-
-Two auth_user rows for one person happen when a username is created with
-whitespace around it, or re-created by a second import. The damage is not the
-spare row: it is that their designations, and so their permissions, can end up
-on the account they never sign into, while their profile and login history sit
-on the other.
-
-Everything that points at the loser is repointed at the keeper before the loser
-is deactivated, so nothing is lost and no role disappears. It deactivates
-rather than deletes: with 160 foreign keys into auth_user, a delete is not a
-reversible operation and this is.
-
-    --pair KEEP=LOSE    the merge, explicit on purpose
-    --dry-run           show every row that would move
-
-Which account survives is a decision about somebody's role, so this command
-never chooses. It refuses unless you name both.
-"""
+"""Fold a duplicate login into the account the person actually uses."""
 from django.core.management.base import BaseCommand, CommandError
 from django.db import connections, transaction
 
 from api.models.erp import AuthUser
 
-#: Repointed rather than left behind. Anything not listed stays with the loser,
-#: which is right for history (a notification was sent to that account) and
-#: wrong for nothing that grants access.
+#: Repointed to the keeper; anything unlisted stays with the loser.
 CARRY_OVER = [
     ("globals_holdsdesignation", "user_id"),
     ("globals_holdsdesignation", "working_id"),
     ("globals_extrainfo", "user_id"),
     ("notifications_notification", "recipient_id"),
-    # Grants access in the legacy leave app. Moved rather than dropped: the
-    # person holds it today, and a merge preserves what they have rather than
-    # quietly taking it away.
+    # Grants access in the legacy leave app, so a merge must keep it.
     ("leave_leaveadministrators", "user_id"),
 ]
 
@@ -86,13 +64,15 @@ class Command(BaseCommand):
             return
 
         with transaction.atomic(), connections["default"].cursor() as c:
+            # Drop the loser's copy of any designation the keeper already holds.
+            c.execute(
+                "DELETE FROM globals_holdsdesignation WHERE user_id = %s AND designation_id IN "
+                "(SELECT designation_id FROM globals_holdsdesignation "
+                "WHERE user_id = %s OR working_id = %s)", [lose.id, keep.id, keep.id])
             for table, column, _, action in moves:
                 if action == "keep-as-is":
                     continue
                 if action == "move":
-                    # Skip rows that would collide with one the keeper already
-                    # has: they already hold that designation, so there is
-                    # nothing to carry over.
                     c.execute(
                         f'UPDATE "{table}" SET "{column}" = %s '
                         f'WHERE "{column}" = %s', [keep.id, lose.id])
@@ -120,12 +100,7 @@ class Command(BaseCommand):
         return user
 
     def _references(self, cursor) -> list[tuple[str, str]]:
-        """Every foreign key into auth_user, read from the database.
-
-        Discovered rather than listed. A hand-maintained list is a loophole with
-        a delay on it: the next table to reference auth_user would be left
-        pointing at a deactivated account and nothing would say so.
-        """
+        """Every foreign key into auth_user, read from the database."""
         cursor.execute("""
             select tc.table_name, kcu.column_name
             from information_schema.table_constraints tc
@@ -156,8 +131,7 @@ class Command(BaseCommand):
                 elif (table, column) in carry:
                     if table == "globals_extrainfo" and self._count(
                             c, table, "user_id", keep_id):
-                        # The keeper already has a profile; the spare one is not
-                        # better information, and moving it would collide.
+                        # The keeper's own profile wins; moving the spare would collide.
                         plan.append((table, column, n, "keep-as-is"))
                     else:
                         plan.append((table, column, n, "move"))

@@ -47,10 +47,7 @@ def iter_users(batch_size: int = 500) -> Iterator[list[dict]]:
         e.user_id: e
         for e in GlobalsExtrainfo.objects.select_related("department").all()
     }
-    # A designation is evidence of employment; the absence of everything is
-    # not. Without this, an account the ERP cannot classify at all was called
-    # staff, which invented 92 colleagues out of orphaned auth_user rows and
-    # would have credited each of them a year's leave.
+    # A designation is evidence of employment; the absence of everything is not.
     employed = set(
         GlobalsHoldsdesignation.objects.values_list("user_id", flat=True).distinct()
     )
@@ -88,12 +85,7 @@ def iter_users(batch_size: int = 500) -> Iterator[list[dict]]:
 
 
 def _kind(extra, holds_designation: bool) -> str:
-    """What the ERP can actually say this person is.
-
-    `unknown` is a real answer and a useful one: it keeps the account visible
-    for display and audit while excluding it from anything that acts on
-    employees. Guessing `staff` instead put orphaned rows on the payroll.
-    """
+    """What the ERP can actually say this person is."""
     if extra is not None:
         return (extra.user_type or "staff").lower()
     return "staff" if holds_designation else "unknown"

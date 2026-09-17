@@ -1,10 +1,4 @@
-"""The ERP-facing half of this service, tested for the first time.
-
-These could not run before: the ERP models are unmanaged, so the test database
-had none of their tables and every test failed during setup. The projection,
-the kind inference and all four erp_* commands were verified by hand against
-the live databases -- which is not a thing that keeps working.
-"""
+"""The ERP-facing half of this service, tested for the first time."""
 from iam.erp_source import iter_users
 from iam.models import IamUser
 from iam.services import employee_page

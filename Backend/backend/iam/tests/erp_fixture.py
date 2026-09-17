@@ -1,19 +1,4 @@
-"""A real ERP schema, in the test database.
-
-The ERP models are `managed = False`, because this service reads a database it
-does not own. The consequence is that the test database has none of those
-tables, so every test that touches the projection has failed to even start --
-which is why the whole ERP-facing half of this app has never been tested.
-
-Django's schema editor can build a table from an unmanaged model as readily as
-from a managed one. The tables are created for the class that asks and dropped
-afterwards, so nothing leaks between tests and the models stay unmanaged where
-it matters, in production.
-
-Data is synthesised rather than copied. A fixture taken from the institute
-would carry real names and roll numbers into the repository, and would pin the
-tests to whatever happened to be in the dump that day.
-"""
+"""A real ERP schema, in the test database."""
 from __future__ import annotations
 
 import random
@@ -40,19 +25,11 @@ class ErpSchemaTestCase(TestCase):
 
     databases = {"default", "system_db"}
 
-    # The tables themselves are created before the first migration, by
-    # iam.testing -- they have to be, because managed models carry foreign keys
-    # to auth_user. All this class adds is the database declaration and the
-    # rollback every TestCase already gives.
+    # The tables themselves are built before migrations, by iam.testing.
 
 
 class ErpFactory:
-    """Synthetic people, deterministic when seeded.
-
-    Deliberately not a mirror of anybody real: the shapes that matter are an
-    employee with a designation, an employee without one, an account with no
-    profile at all, and a student -- and those can be made up.
-    """
+    """Synthetic people, deterministic when seeded."""
 
     def __init__(self, seed: int = 0) -> None:
         self.random = random.Random(seed)
@@ -103,11 +80,7 @@ class ErpFactory:
 
     def _profile(self, user: AuthUser, kind: str,
                  department: str | None) -> GlobalsExtrainfo:
-        """Every NOT NULL column filled, read off the model rather than guessed.
-
-        The ERP's own schema is stricter than its data: several columns are
-        NOT NULL with no default, so a partial row fails at insert.
-        """
+        """Every NOT NULL column filled, read off the model rather than guessed."""
         return GlobalsExtrainfo.objects.create(
             id=user.username,
             user_id=user.id,

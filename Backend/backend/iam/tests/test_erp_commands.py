@@ -1,11 +1,4 @@
-"""The four commands that write to, or report on, the ERP.
-
-Until the ERP tables could be built in a test database these were verified by
-hand against the live institute, which proves they worked once. Each is
-exercised here against synthesised data, including the shapes that caused the
-original defects: a tab-separated import line in a username, and two accounts
-whose usernames differ only by a trailing space.
-"""
+"""The four commands that write to, or report on, the ERP."""
 from io import StringIO
 
 from django.core.management import call_command
@@ -314,3 +307,36 @@ class MergeDuplicateAccountTests(ErpSchemaTestCase):
     def test_the_pair_argument_must_be_two_ids(self):
         with self.assertRaises(CommandError):
             run("erp_merge_duplicate_account", "--pair", "not-a-pair")
+
+
+class MergeWhenBothHoldTheRoleTests(ErpSchemaTestCase):
+    def setUp(self):
+        self.erp = ErpFactory(seed=13)
+        self.keeper = self.erp.employee(kind="staff", department="Registrar Office")
+        self.loser = self.erp.account(username=f"{self.keeper.username} ")
+        self.erp.holds(self.keeper, "Senior Assistant")
+        self.erp.holds(self.loser, "Senior Assistant")
+
+    def test_a_designation_both_accounts_hold_does_not_break_the_merge(self):
+        run("erp_merge_duplicate_account",
+            "--pair", f"{self.keeper.id}={self.loser.id}")
+
+        self.loser.refresh_from_db()
+        assert self.loser.is_active is False
+
+    def test_the_keeper_holds_it_exactly_once(self):
+        run("erp_merge_duplicate_account",
+            "--pair", f"{self.keeper.id}={self.loser.id}")
+
+        assert GlobalsHoldsdesignation.objects.filter(
+            user_id=self.keeper.id, designation__name="Senior Assistant").count() == 1
+
+    def test_a_designation_only_the_loser_holds_still_moves(self):
+        self.erp.holds(self.loser, "Junior Assistant")
+
+        run("erp_merge_duplicate_account",
+            "--pair", f"{self.keeper.id}={self.loser.id}")
+
+        held = set(GlobalsHoldsdesignation.objects.filter(
+            user_id=self.keeper.id).values_list("designation__name", flat=True))
+        assert held == {"Senior Assistant", "Junior Assistant"}
